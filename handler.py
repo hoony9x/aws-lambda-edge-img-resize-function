@@ -103,14 +103,14 @@ def lambda_handler(event, context):
             w_decrease_ratio: float = target_width / width
             h_decrease_ratio: float = target_height / height
 
-            # 축소 비율이 더 큰 쪽으로 기준을 잡는다.
-            decrease_ratio: float = min(w_decrease_ratio, h_decrease_ratio)
-            if decrease_ratio > 1.0:
-                decrease_ratio = 1.0
+            # 축소 비율이 덜한 쪽으록 기준을 잡는다.
+            transform_ratio: float = max(w_decrease_ratio, h_decrease_ratio)
+            # if transform_ratio > 1.0:
+            #     transform_ratio = 1.0
 
             if original_image.format == "JPEG":
                 converted_image = original_image.resize(
-                    (int(width * decrease_ratio), int(height * decrease_ratio)),
+                    (int(width * transform_ratio), int(height * transform_ratio)),
                     reducing_gap=3
                 )
             elif original_image.format == "PNG":
@@ -118,17 +118,40 @@ def lambda_handler(event, context):
                 white_background_img = Image.new("RGBA", original_image.size, "WHITE")
                 white_background_img.paste(original_image, (0, 0), original_image)
                 converted_image = white_background_img.convert("RGB").resize(
-                    (int(width * decrease_ratio), int(height * decrease_ratio)),
+                    (int(width * transform_ratio), int(height * transform_ratio)),
                     reducing_gap=3
                 )
             else:
                 # pass through
                 return response
 
+            mid_x = converted_image.size[0] / 2
+            mid_y = converted_image.size[1] / 2
+            diff_x = target_width / 2
+            diff_y = target_height / 2
+
+            start_x = int(round(mid_x - diff_x))
+            if start_x < 0:
+                start_x = 0
+
+            start_y = int(round(mid_y - diff_y))
+            if start_y < 0:
+                start_y = 0
+
+            end_x = int(round(mid_x + diff_x))
+            if end_x >= target_width:
+                end_x = target_width - 1
+
+            end_y = int(round(mid_y + diff_y))
+            if end_y >= target_height:
+                end_y = target_height - 1
+
+            cropped_image = converted_image.crop((start_x, start_y, end_x, end_y))
+
             # https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.Image.tobytes
             # 위 링크에서는 Compressed Image 에서 .tobytes() 사용 시 이미지가 제대로 저장되지 않는다고 하고 있음.
             bytes_io = io.BytesIO()
-            converted_image.save(bytes_io, format="JPEG", optimize=True, quality=target_quality)
+            cropped_image.save(bytes_io, format="JPEG", optimize=True, quality=target_quality)
             result_size: int = bytes_io.tell()
             result_data: bytes = bytes_io.getvalue()
             result: str = base64.standard_b64encode(result_data).decode()
