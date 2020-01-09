@@ -139,12 +139,12 @@ def lambda_handler(event, context):
                 start_y = 0
 
             end_x = int(round(mid_x + diff_x))
-            if end_x >= target_width:
-                end_x = target_width - 1
+            if end_x >= converted_image.size[0]:
+                end_x = converted_image.size[0] - 1
 
             end_y = int(round(mid_y + diff_y))
-            if end_y >= target_height:
-                end_y = target_height - 1
+            if end_y >= converted_image.size[1]:
+                end_y = converted_image.size[1] - 1
 
             cropped_image = converted_image.crop((start_x, start_y, end_x, end_y))
 
