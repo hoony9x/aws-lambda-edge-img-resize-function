@@ -2,7 +2,7 @@ from botocore.exceptions import ClientError
 from PIL import Image
 import boto3
 
-from typing import Optional, List, Tuple
+from typing import List, Tuple
 import base64
 import io
 
@@ -18,8 +18,8 @@ def lambda_handler(event, context):
 
     # 요청한 파일이 존재하지 않을 경우 status 가 40X 의 형태일 것이다.
     if int(response["status"]) == 200:
-        target_width: Optional[int] = None
-        target_height: Optional[int] = None
+        target_width: int = 0
+        target_height: int = 0
         target_quality: int = 75
 
         # 변환 대상 값을 parsing
@@ -38,14 +38,14 @@ def lambda_handler(event, context):
                         target_quality = 1
 
         # 변환 대상의 가로세로 값이 둘 다 주어지지 않을 경우 그대로 pass through
-        if target_width is None and target_height is None:
+        if target_width == 0 and target_height == 0:
             return response
 
         qs: str = f"q{target_quality}_"
-        if target_width is not None:
+        if target_width != 0:
             qs = f"w{target_width}{qs}"
 
-        if target_height is not None:
+        if target_height != 0:
             qs = f"h{target_height}{qs}"
 
         s3_object_key: str = request["uri"][1:]
@@ -97,8 +97,8 @@ def lambda_handler(event, context):
             original_image = Image.open(s3_response["Body"])
             width, height = original_image.size
 
-            target_width: int = width if target_width is None else target_width
-            target_height: int = height if target_height is None else target_height
+            # target_width: int = width if target_width is None else target_width
+            # target_height: int = height if target_height is None else target_height
 
             w_decrease_ratio: float = target_width / width
             h_decrease_ratio: float = target_height / height
@@ -124,6 +124,12 @@ def lambda_handler(event, context):
             else:
                 # pass through
                 return response
+
+            if target_width == 0:
+                target_width = int(width * transform_ratio)
+
+            if target_height == 0:
+                target_height = int(height * transform_ratio)
 
             mid_x = converted_image.size[0] / 2
             mid_y = converted_image.size[1] / 2
