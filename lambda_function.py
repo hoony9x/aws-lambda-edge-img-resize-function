@@ -106,8 +106,8 @@ def lambda_handler(event: dict, context) -> dict:
 
     # 축소 비율이 덜한 쪽으록 기준을 잡는다.
     transform_ratio: float = max(w_decrease_ratio, h_decrease_ratio)
-    if transform_ratio > 1.0:
-        transform_ratio = 1.0
+    # if transform_ratio > 1.0:
+    #     transform_ratio = 1.0
 
     if original_image.format == "JPEG":
         converted_image: Image = original_image.resize(
