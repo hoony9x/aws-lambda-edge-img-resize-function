@@ -70,4 +70,43 @@ CLI 로 다루기 약간 복잡해서 Web Console 로 하는 법을 첨부합니
 
 그리고 Add 를 눌러줍니다.
 
+### S3 Bucket Policy 수정
+S3 Bucket 정책을 열면 아마 ```Sid 1``` 에 해당하는 부분만 존재할 것입니다.
+```json
+{
+    "Version": "2008-10-17",
+    "Id": "PolicyForCloudFrontPrivateContent",
+    "Statement": [
+        {
+            "Sid": "1",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity XXXXXXXXXXXXX"
+            },
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::YOUR_S3_BUCKET/*"
+        },
+        {
+            "Sid": "2",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::XXXXXXXXXXXX:role/service-role/YOUR_ROLE_ASSOCIATED_WITH_LAMBDA_FUNCTION"
+            },
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::YOUR_S3_BUCKET/*"
+        },
+        {
+            "Sid": "3",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::XXXXXXXXXXXX:role/service-role/YOUR_ROLE_ASSOCIATED_WITH_LAMBDA_FUNCTION"
+            },
+            "Action": "s3:PutObject",
+            "Resource": "arn:aws:s3:::YOUR_S3_BUCKET/*"
+        }
+    ]
+}
+```
+```Sid 2```, ```Sid 3``` 에 해당하는 부분을 추가해주도록 합니다.
+
 여기까지 하면 아마 정상적으로 적용이 될 것입니다.
