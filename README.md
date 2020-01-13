@@ -1,4 +1,4 @@
-# 놀이의 발견 Image Resize Lambda@Edge Function
+# Image Resize Lambda@Edge Function
 
 본 코드는 AWS 의 Lambda@Edge 에서 동작하는 코드입니다.
 
