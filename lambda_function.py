@@ -1,8 +1,9 @@
 from botocore.exceptions import ClientError
 from PIL import Image
+from urllib import parse
 import boto3
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import base64
 import io
 
@@ -23,10 +24,13 @@ def lambda_handler(event: dict, context) -> dict:
     target_width: int = 0
     target_height: int = 0
     target_quality: int = 75
+    target_size: Optional[str] = None
 
     # 변환 대상 값을 parsing
     if request["querystring"] != "":
-        queries: List[Tuple[str, str]] = [tuple(q_str.split("=")) for q_str in request["querystring"].split("&")]
+        queries: List[Tuple[str, str]] = [
+            tuple(q_str.split("=")) for q_str in request["querystring"].split("&")
+        ]
         for k, v in queries:
             if k == "w":
                 target_width = int(v)
@@ -38,8 +42,24 @@ def lambda_handler(event: dict, context) -> dict:
                     target_quality = 95
                 elif target_quality < 1:
                     target_quality = 1
+            elif k == "s":
+                target_size = v
 
-    # 변환 대상의 가로세로 값이 둘 다 주어지지 않을 경우 그대로 pass through
+    if target_width == 0 and target_height == 0 and target_size is not None:
+        if target_size == "s":
+            target_width = 200
+        elif target_size == "m":
+            target_width = 400
+        elif target_size == "l":
+            target_width = 600
+
+    # 변환 대상의 가로세로 값이 둘 다 주어지지 않았거나
+    # 비정상적으로 큰 값이 들어온 경우 그대로 pass through
+    # if (
+    #     (target_width == 0 and target_height == 0)
+    #     or target_width > 5000
+    #     or target_height > 5000
+    # ):
     if target_width == 0 and target_height == 0:
         return response
 
@@ -69,8 +89,7 @@ def lambda_handler(event: dict, context) -> dict:
     is_converted_object_exists: bool = True
     try:
         s3_response = s3_client.head_object(
-            Bucket=s3_bucket_name,
-            Key=converted_object_key
+            Bucket=s3_bucket_name, Key=parse.unquote(converted_object_key)
         )
     except ClientError:
         is_converted_object_exists = False
@@ -80,15 +99,14 @@ def lambda_handler(event: dict, context) -> dict:
         response["status"] = 301
         response["statusDescription"] = "Moved Permanently"
         response["body"] = ""
-        response["headers"]["location"] = [{"key": "Location", "value": f"/{converted_object_key}"}]
+        response["headers"]["location"] = [
+            {"key": "Location", "value": f"/{converted_object_key}"}
+        ]
 
         return response
 
     try:
-        s3_response = s3_client.get_object(
-            Bucket=s3_bucket_name,
-            Key=s3_object_key
-        )
+        s3_response = s3_client.get_object(Bucket=s3_bucket_name, Key=parse.unquote(s3_object_key))
     except ClientError as e:
         raise e
 
@@ -106,24 +124,32 @@ def lambda_handler(event: dict, context) -> dict:
 
     # 축소 비율이 덜한 쪽으록 기준을 잡는다.
     transform_ratio: float = max(w_decrease_ratio, h_decrease_ratio)
-    # if transform_ratio > 1.0:
-    #     transform_ratio = 1.0
+    if transform_ratio > 1.0:
+        transform_ratio = 1.0
 
     if original_image.format == "JPEG":
         converted_image: Image = original_image.resize(
             (int(width * transform_ratio), int(height * transform_ratio)),
-            reducing_gap=3
+            reducing_gap=3,
         )
     elif original_image.format == "PNG":
         # PNG 일 경우 강제로 JPG 로 변환한다.
-        white_background_img: Image = Image.new("RGBA", original_image.size, "WHITE")
-        white_background_img.paste(original_image, (0, 0), original_image)
-        converted_image: Image = white_background_img.convert("RGB").resize(
-            (int(width * transform_ratio), int(height * transform_ratio)),
-            reducing_gap=3
-        )
+        if original_image.mode == "RGB":
+            # PNG 이면서 Alpha Layer 가 없는 경우에 대한 처리
+            converted_image: Image = original_image.resize(
+                (int(width * transform_ratio), int(height * transform_ratio)),
+                reducing_gap=3,
+            )
+        else:
+            # 나머지 PNG 에 대한 처리
+            white_background_img: Image = Image.new("RGBA", original_image.size, "WHITE")
+            white_background_img.paste(original_image.convert("RGBA"))
+            converted_image: Image = white_background_img.convert("RGB").resize(
+                (int(width * transform_ratio), int(height * transform_ratio)),
+                reducing_gap=3,
+            )
 
-        white_background_img.close()
+            white_background_img.close()
     else:
         # pass through
         original_image.close()
@@ -176,9 +202,9 @@ def lambda_handler(event: dict, context) -> dict:
         try:
             s3_response = s3_client.put_object(
                 Bucket=s3_bucket_name,
-                Key=converted_object_key,
+                Key=parse.unquote(converted_object_key),
                 ContentType="image/jpeg",
-                Body=result_data
+                Body=result_data,
             )
         except ClientError as e:
             raise e
@@ -186,13 +212,17 @@ def lambda_handler(event: dict, context) -> dict:
         response["status"] = 301
         response["statusDescription"] = "Moved Permanently"
         response["body"] = ""
-        response["headers"]["location"] = [{"key": "Location", "value": f"/{converted_object_key}"}]
+        response["headers"]["location"] = [
+            {"key": "Location", "value": f"/{converted_object_key}"}
+        ]
     else:
         # 1MB 미만이라면 결과값을 그대로 response body 에 넣어서 보내준다.
         response["status"] = 200
         response["statusDescription"] = "OK"
         response["body"] = result
         response["bodyEncoding"] = "base64"
-        response["headers"]["content-type"] = [{"key": "Content-Type", "value": "image/jpeg"}]
+        response["headers"]["content-type"] = [
+            {"key": "Content-Type", "value": "image/jpeg"}
+        ]
 
     return response
