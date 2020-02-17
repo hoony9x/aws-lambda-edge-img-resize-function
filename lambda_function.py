@@ -53,13 +53,6 @@ def lambda_handler(event: dict, context) -> dict:
         elif target_size == "l":
             target_width = 600
 
-    # 변환 대상의 가로세로 값이 둘 다 주어지지 않았거나
-    # 비정상적으로 큰 값이 들어온 경우 그대로 pass through
-    # if (
-    #     (target_width == 0 and target_height == 0)
-    #     or target_width > 5000
-    #     or target_height > 5000
-    # ):
     if target_width == 0 and target_height == 0:
         return response
 
@@ -78,12 +71,6 @@ def lambda_handler(event: dict, context) -> dict:
     # 따라서 변환 결과물이 1MB 가 넘을 경우 s3 에 해당 결과물을 올리게 된다.
     # converted_object_key 는 해당 결과물의 파일명에 해당함.
     converted_object_key: str = "/".join(s3_object_key_split)
-
-    # 본 코드에서는 JPEG 가 아닌 이미지 파일(현재는 PNG 파일만 해당) 을 JPG 로 변환하고 있음.
-    # 따라서 해당하는 경우 .jpg 확장자를 붙혀주게 된다.
-    file_extension: str = s3_object_key.split("/")[-1].split(".")[-1]
-    if file_extension.lower() == "png":
-        converted_object_key = converted_object_key[:-3] + "jpg"
 
     # 변환 결과물이 이미 존재하는지 확인.
     is_converted_object_exists: bool = True
@@ -133,23 +120,10 @@ def lambda_handler(event: dict, context) -> dict:
             reducing_gap=3,
         )
     elif original_image.format == "PNG":
-        # PNG 일 경우 강제로 JPG 로 변환한다.
-        if original_image.mode == "RGB":
-            # PNG 이면서 Alpha Layer 가 없는 경우에 대한 처리
-            converted_image: Image = original_image.resize(
-                (int(width * transform_ratio), int(height * transform_ratio)),
-                reducing_gap=3,
-            )
-        else:
-            # 나머지 PNG 에 대한 처리
-            white_background_img: Image = Image.new("RGBA", original_image.size, "WHITE")
-            white_background_img.paste(original_image.convert("RGBA"))
-            converted_image: Image = white_background_img.convert("RGB").resize(
-                (int(width * transform_ratio), int(height * transform_ratio)),
-                reducing_gap=3,
-            )
-
-            white_background_img.close()
+        converted_image: Image = original_image.resize(
+            (int(width * transform_ratio), int(height * transform_ratio)),
+            reducing_gap=3,
+        )
     else:
         # pass through
         original_image.close()
@@ -187,7 +161,9 @@ def lambda_handler(event: dict, context) -> dict:
     # https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.Image.tobytes
     # 위 링크에서는 Compressed Image 에서 .tobytes() 사용 시 이미지가 제대로 저장되지 않는다고 하고 있음.
     bytes_io = io.BytesIO()
-    cropped_image.save(bytes_io, format="JPEG", optimize=True, quality=target_quality)
+
+    # PNG 일 경우 quality option 은 무시됨.
+    cropped_image.save(bytes_io, format=original_image.format, optimize=True, quality=target_quality)
     result_size: int = bytes_io.tell()
     result_data: bytes = bytes_io.getvalue()
     result: str = base64.standard_b64encode(result_data).decode()
@@ -203,7 +179,7 @@ def lambda_handler(event: dict, context) -> dict:
             s3_response = s3_client.put_object(
                 Bucket=s3_bucket_name,
                 Key=parse.unquote(converted_object_key),
-                ContentType="image/jpeg",
+                ContentType=s3_object_type,
                 Body=result_data,
             )
         except ClientError as e:
@@ -222,7 +198,7 @@ def lambda_handler(event: dict, context) -> dict:
         response["body"] = result
         response["bodyEncoding"] = "base64"
         response["headers"]["content-type"] = [
-            {"key": "Content-Type", "value": "image/jpeg"}
+            {"key": "Content-Type", "value": s3_object_type}
         ]
 
     return response
